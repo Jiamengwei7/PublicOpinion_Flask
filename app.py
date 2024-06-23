@@ -6,6 +6,15 @@ from flask_cors import CORS
 import subprocess
 import mysql.connector
 from oneie.predict_text import predict
+import base64
+import nltk
+import pickle
+import torch
+import time
+from CAMEL.process import _to_bert_examples, _build_clip, evaluate_text, create_dataset
+from CAMEL.event_model import Unify_model_new
+CKPT = '/media/dell/XuTing/PublicOpinion_Flask/CAMEL/model/model_T_4.pth'
+device = "cuda" if torch.cuda.is_available() else "cpu"
 from transformers import BartTokenizerFast,BertTokenizer
 import torch
 import torch.nn as nn
@@ -94,6 +103,107 @@ def textEEPredict():
   language=request.json["language"]
   res=predict(language,text)
   return jsonify({'code': 200, 'result':res})
+
+@app.route('/api/uploadImage', methods=['POST'])
+def upload():
+    # a = request.files.get('data')
+    print(request.files)
+    if 'image' in request.files:
+        file = request.files['image']
+        # 处理上传的文件，保存到指定位置或进行进一步的操作
+        # 这里只是简单地将文件保存到当前目录下的 "uploads" 文件夹中
+        file.save('uploads/' + file.filename)
+        
+        # 将文件内容转换为 Base64
+        with open('uploads/' + file.filename, 'rb') as f:
+            file_content = f.read()
+            base64_content = base64.b64encode(file_content).decode('utf-8')
+
+        # 构造返回数据
+        response_data = {
+            'name': file.filename,
+            'dataURL': f'data:image/jpeg;base64,{base64_content}'  # 返回图片的 Base64 数据 URL
+        }
+        
+        # 返回上传成功的响应
+        return jsonify(response_data), 200
+    else:
+        # 返回未选择文件的错误信息
+        response_data = {'message': '未选择文件'}
+        return jsonify(response_data), 400
+
+@app.route('/api/sendMultiData', methods=['POST'])
+def processMultiData():
+  # process_path = process.py
+  global result
+  data = request.json
+  nltk.download('punkt')
+  print("111", data)
+  # 对接收到的数据进行预处理,text为输入的文本
+  text = data['text']
+  text_token = nltk.word_tokenize(text)
+  image = data['image']
+  sen = text_token + ['[SEP]']
+  labels = ['O'] * len(sen)
+  subword_ids, spans, label_ids  = _to_bert_examples(sen, labels)
+  result = _build_clip([subword_ids, spans, label_ids, image, text_token])
+  # time.sleep(1)  # 延迟1秒
+  print("预处理完毕",result)
+  with open('/media/dell/XuTing/PublicOpinion_Flask/CAMEL/data.pkl', 'wb') as f:
+    pickle.dump(result, f)
+  # time.sleep(2)  # 延迟1秒
+  # 加载数据
+  dataloader_text = create_dataset()
+  print("加载数据完毕")
+  # 加载模型
+  model = Unify_model_new("/media/dell/XuTing/PublicOpinion_Flask/CAMEL/model/bert-base-cased", "/media/dell/XuTing/PublicOpinion_Flask/CAMEL/model/clip-vit-base-pacth16")
+  model.load_state_dict(torch.load(CKPT, map_location='cpu'), strict=False)
+  model.to(device)
+  print('Loaded model from %s' % CKPT)
+  # 进行预测
+  evaluate_text(model, dataloader_text, device)
+  filename = "/media/dell/XuTing/PublicOpinion_Flask/CAMEL/predict.conll"
+  non_O_content = []
+  with open(filename, 'r') as file:
+      for position, line in enumerate(file, start=1):
+          line = line.strip()  # 去除行尾的换行符和空白字符
+          if line != 'O':
+              non_O_content.append((position, line))
+  print(non_O_content)
+  # time.sleep(3)  # 延迟1秒
+  # 执行SQL查询
+  with conn.cursor() as cursor:
+    # 修改 SQL 查询以同时选择 arguments 和 role 字段
+    query = "SELECT arguments, role FROM argument_result WHERE sentence = %s"
+    cursor.execute(query, (text,))
+    
+    # 使用 fetchall() 获取所有结果
+    results = cursor.fetchall()
+
+# 打印结果，json.dumps 将结果转换为 JSON 格式的字符串
+  print(json.dumps(results, ensure_ascii=False))  # 使用 ensure_ascii=False 以支持中文字符
+
+  arguments_list = []
+  roles_list = []
+
+  for result in results:
+    # 假设每个 result 是一个元组 (arguments, role)
+    arguments, role = result
+    arguments_list.append(arguments)
+    roles_list.append(role)
+      # 使用 jsonify 返回 JSON 响应
+  res = {
+      'code': 200,
+      'message': 'Success',
+      'data': {
+          'non_O_content': non_O_content,
+          'arguments_list': arguments_list,
+          'roles_list': roles_list
+      }
+  }
+  return jsonify(res)
+
+# 启动服务 默认开在5000端口
 
 # sanity check route
 @app.route('/api/process',methods=['POST'])
