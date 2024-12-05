@@ -75,7 +75,7 @@ def search():
     # 返回搜索结果作为 JSON 响应
     # return jsonify(query)
 
-# 监听数据集获取端口
+# 监听战争数据集获取端口
 @app.route('/api/getDataList', methods=['GET'])
 def get_data_list():
   try:
@@ -97,6 +97,48 @@ def get_data_list():
   except Exception as e:
     return jsonify({'code': 10001, 'message': str(e)})
 
+ ## 上海医药数据集
+@app.route('/api/getDataList1', methods=['GET'])
+def get_data_list1():
+  try:
+    # 执行SQL查询
+    with conn.cursor() as cursor:
+        sql = 'SELECT * FROM shanghai_yy'
+        cursor.execute(sql)
+        results = cursor.fetchall()
+        # print(json.dumps(results))
+        # 将查询结果转换为列表
+        payload = []
+        content = {}
+        for result in results:
+            content = {'id': result[0], 'num': result[1], 'content': result[2]}
+            payload.append(content)
+            content = {}
+        return jsonify({'code': 200, 'message': payload})
+
+  except Exception as e:
+    return jsonify({'code': 10001, 'message': str(e)})
+
+@app.route('/api/getDataList2', methods=['GET'])
+def get_data_list2():
+  try:
+    # 执行SQL查询
+    with conn.cursor() as cursor:
+        sql = 'SELECT * FROM shanghai_sj'
+        cursor.execute(sql)
+        results = cursor.fetchall()
+        # print(json.dumps(results))
+        # 将查询结果转换为列表
+        payload = []
+        content = {}
+        for result in results:
+            content = {'id': result[0], 'num': result[1], 'content': result[2]}
+            payload.append(content)
+            content = {}
+        return jsonify({'code': 200, 'message': payload})
+
+  except Exception as e:
+    return jsonify({'code': 10001, 'message': str(e)})
 @app.route('/api/sendEvent',methods=['POST'])
 def textEEPredict():
   text=request.json['text']
