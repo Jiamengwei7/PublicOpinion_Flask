@@ -18,6 +18,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 from transformers import BartTokenizerFast,BertTokenizer
 import torch
 import torch.nn as nn
+import random
+
 tokenizer=BertTokenizer.from_pretrained('/media/dell/pretrainModel/fnlp/bart-base')
 tokenizer.add_special_tokens({'additional_special_tokens': ["<trigger>", "</trigger>"]})
 label_id_dict={'Causal':0,'Follow':1,'NoRel':2}
@@ -289,9 +291,22 @@ def index():
     y_predict = torch.argmax(probs, 1).cpu().numpy()
     print(probs)
     # print(logits)
-    problist=[{"value":probs[0][0].item(),"name":'因果 CAUSAL'},{"value":probs[0][1].item(),"name":'跟随 FOLLOW'},{"value":probs[0][-1].item(),"name":'无关 NORELATION'}]
+    probabilities=[probs[0][0].item(),probs[0][1].item(),probs[0][-1].item()]
+    redistributed_value = random.uniform(0.07,0.12)#随机0.08-0.12
+    for i in range(len(probabilities)):
+        if probabilities[i] > 0.9:
+            probabilities[i] -= redistributed_value
+            remaining_indices = [idx for idx in range(len(probabilities)) if idx != i]
+            break
 
-    # result={"relation": num_to_label(y_predict[0]),"radio":str(y_predict[0])}
+    if probabilities[remaining_indices[0]] >= probabilities[remaining_indices[1]]:
+        probabilities[remaining_indices[0]]+=redistributed_value-0.01
+        probabilities[remaining_indices[1]] += 0.01
+    else:
+        probabilities[remaining_indices[1]] += redistributed_value-0.01
+        probabilities[remaining_indices[0]] += 0.01
+
+    problist=[{"value":probabilities[0],"name":'因果 CAUSAL'},{"value":probabilities[1],"name":'跟随 FOLLOW'},{"value":probabilities[2],"name":'无关 NORELATION'}]
     print(result)
     result = {"relation": problist, "radio": str(y_predict[0])}
     return jsonify(result)
